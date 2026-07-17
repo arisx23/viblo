@@ -1,0 +1,58 @@
+# SafeLink Security Fixes
+
+This document summarizes all security vulnerabilities that were identified and fixed in this version.
+
+## 1. Hardcoded Default PIN Removed (CRITICAL)
+**File:** `src/App.tsx` — `verifyPin()` function  
+**Issue:** A hardcoded fallback PIN (`270491`) was present, allowing anyone who knew it to bypass admin authentication even if no PIN was set in the database.  
+**Fix:** Removed the default PIN entirely. If no PIN is configured in the database, authentication always fails. Admin must set a PIN via the settings page before first use.
+
+## 2. Open Redirect Vulnerability (HIGH)
+**File:** `src/App.tsx` — `RedirectPage` component  
+**Issue:** `window.location.href` was set directly from database-stored URLs without validation. An attacker who compromised the database (or created a malicious short link) could redirect users to `javascript:`, `data:`, or other dangerous URI schemes.  
+**Fix:** Added `isValidUrl()` utility function that validates URLs must use `http:` or `https:` protocols. All redirects (main link, fallback URL) are now validated before execution.
+
+## 3. XSS via dangerouslySetInnerHTML (HIGH)
+**File:** `src/App.tsx` — Article content rendering  
+**Issue:** Article content from the database was rendered directly via `dangerouslySetInnerHTML` without sanitization, allowing stored XSS attacks.  
+**Fix:** Added `sanitizeHtml()` function that strips `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>` tags, inline event handlers (`onclick`, `onerror`, etc.), and `javascript:` URIs before rendering.
+
+## 4. PIN Brute-Force Protection (MEDIUM)
+**File:** `src/App.tsx` — `PinLogin` component  
+**Issue:** No rate limiting on PIN login attempts, allowing unlimited brute-force attacks.  
+**Fix:** Added rate limiting: max 5 attempts, then 60-second lockout. Users see a countdown timer and remaining attempts.
+
+## 5. URL Validation in CTA Links (MEDIUM)
+**File:** `src/App.tsx` — WhatsApp/Facebook CTA buttons  
+**Issue:** CTA buttons for WhatsApp and Facebook used URLs from settings without validation.  
+**Fix:** Added `isValidUrl()` checks before rendering CTA links.
+
+## 6. Footer URL Validation (LOW)
+**File:** `src/App.tsx` — Footer "Powered by" link  
+**Issue:** Footer URL from settings was used directly without protocol validation.  
+**Fix:** Added `isValidUrl()` check; falls back to `#` if invalid.
+
+## 7. Content Security Policy (MEDIUM)
+**File:** `index.html`  
+**Issue:** No CSP header, allowing arbitrary script execution.  
+**Fix:** Added CSP meta tag restricting script sources to `'self'`, `'unsafe-inline'`, `'unsafe-eval'`; image sources to `'self'`, `data:`, and trusted domains; `frame-ancestors 'none'` to prevent clickjacking.
+
+## 8. robots.txt Overly Restrictive (LOW)
+**File:** `public/robots.txt`  
+**Issue:** `Disallow: /` blocked all search engine crawling, including legitimate short link pages.  
+**Fix:** Changed to `Allow: /` with `Disallow: /#admin` to block only the admin panel.
+
+## 9. 404.html Routing Fix (CRITICAL BUG)
+**File:** `public/404.html`  
+**Issue:** `pathSegmentsToKeep = 1` was set for a GitHub Pages subpath deployment, but the site uses a custom domain (`tcoco.biz.id`) at the root. This caused direct navigation to short links to fail with incorrect path reconstruction.  
+**Fix:** Changed to `pathSegmentsToKeep = 0` for root-level custom domain deployment.
+
+## 10. Query String Route Parsing (CRITICAL BUG)
+**File:** `src/App.tsx` — `App` component  
+**Issue:** The 404.html redirect converts path-based URLs to `/?/path` query string format, but the SPA never read this query string, so direct navigation to short links was broken.  
+**Fix:** Added query string detection in the hash change handler. When `/?/path` is detected, it's converted to `#path` hash format that the SPA router understands.
+
+## 11. Database Config URL Validation (MEDIUM)
+**File:** `src/lib/db/index.ts` — `initDbConfig()`  
+**Issue:** The cPanel API URL from `safelink-config.json` was used without protocol validation. A malicious config file could redirect API calls to arbitrary servers.  
+**Fix:** Added URL parsing and protocol validation when loading the cPanel config. Only `http:` and `https:` are allowed; invalid URLs are silently discarded.
